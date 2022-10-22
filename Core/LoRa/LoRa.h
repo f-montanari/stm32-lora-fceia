@@ -3,6 +3,9 @@
 
 #include "main.h"
 
+// Límite entre transferencias
+#define TRANSFER_TIMEOUT 2000
+
 /* ------------- REGISTROS --------------- */
 /*
  * La página 108 del datasheet del SX1276 mapea los registros
@@ -44,11 +47,21 @@
 // Version
 #define REG_VERSION					0x42
 
+/* ------ Estados ----------- */
+
+typedef enum {
+	SleepMode = 0u,
+	StandbyMode = 1u,
+	TxMode = 3u,
+	RxContinuousMode = 5u,
+	RxSingleMode = 6u
+} LoRa_Mode;
 
 
 typedef struct LoRa_Settings
 {
 
+	// Hardware Definitions
 	GPIO_TypeDef*      NSS_port;
 	uint16_t		   NSS_pin;
 
@@ -57,12 +70,20 @@ typedef struct LoRa_Settings
 
 	GPIO_TypeDef*      DIO0_port;
 	uint16_t		   DIO0_pin;
+
+	// SPI
+	SPI_HandleTypeDef* SPI_Handler;
+
+	// Current Mode
+	LoRa_Mode		   currentMode;
+
 } LoRa;
 
 
 uint16_t LoRa_init(LoRa* _LoRa);
 void LoRa_reset(LoRa* _LoRa);
-void LoRa_readReg(LoRa* _LoRa, uint8_t* address, uint16_t r_length, uint8_t* output, uint16_t w_length);
-void LoRa_writeReg(LoRa* _LoRa, uint8_t* address, uint16_t r_length, uint8_t* values, uint16_t w_length);
+uint8_t LoRa_readRegBlocking(LoRa* loRa, uint8_t addr);
+void LoRa_writeRegBlocking(LoRa* loRa, uint8_t addr, uint8_t data);
+void LoRa_burstWriteBlocking(LoRa* loRa, uint8_t addr, uint8_t* data, uint8_t length);
 
 #endif /* LORA_LORA_H_ */

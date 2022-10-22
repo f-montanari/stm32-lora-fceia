@@ -182,3 +182,136 @@ uint8_t RegDetectionThreshold;
 uint8_t RegSyncWord;
 
 /* ========================= [FIN DEFINICION REGISTROS] ========================== */
+
+/* ========================= [FUNCIONES DRIVER] ================================= */
+
+/*
+ * Lee el registro ubicado en la dirección "addr" (un registro a la vez, 1 byte de longitud)
+ *
+ * Bloquea el hilo! Ojo con uso de interrupciones. En el mejor de los casos implementamos DMA
+ * más adelante.
+ *
+ */
+uint8_t LoRa_readRegBlocking(LoRa* loRa, uint8_t addr)
+{
+	uint8_t out;
+
+	// Hacemos NSS bajo para seleccionar el chip asignado al LoRa
+	HAL_GPIO_WritePin(loRa->NSS_port, loRa->NSS_pin, GPIO_PIN_RESET);
+
+	/*
+	 * Según el Datasheet SX1276-7-8, pag. 80: Interfaz SPI, tenemos que especificar si
+	 * vamos a leer o escribir mediante el MSB del address. Si el primer bit que se manda es un 0,
+	 * estamos leyendo. Sino, es escritura.
+	 */
+
+	// Asignamos 0 al MSB del address para indicar lectura
+	addr &= 0x7F; // 01111111
+
+	// Comenzamos transmisión del address
+	HAL_SPI_Transmit(loRa->SPI_Handler, &addr, 1,TRANSFER_TIMEOUT);
+
+	// Esperamos a que termine
+	while(HAL_SPI_GetState(loRa->SPI_Handler) != HAL_SPI_STATE_READY);
+
+	// Leemos el dato en el registro.
+	HAL_SPI_Receive(loRa->SPI_Handler, &out, 1, TRANSFER_TIMEOUT);
+
+	// Volvemos a esperar que termine
+	while(HAL_SPI_GetState(loRa->SPI_Handler) != HAL_SPI_STATE_READY);
+
+	// Finalizamos transferencia levantando el NSS
+	HAL_GPIO_WritePin(loRa->NSS_port, loRa->NSS_pin, GPIO_PIN_SET);
+
+	return out;
+}
+
+/*
+ * Escribe el registro ubicado en la dirección "addr" (un registro a la vez, 1 byte de longitud)
+ *
+ * Bloquea el hilo! Ojo con uso de interrupciones. En el mejor de los casos implementamos DMA
+ * más adelante.
+ *
+ */
+void LoRa_writeRegBlocking(LoRa* loRa, uint8_t addr, uint8_t data)
+{
+	// Hacemos NSS bajo para seleccionar el chip asignado al LoRa
+	HAL_GPIO_WritePin(loRa->NSS_port, loRa->NSS_pin, GPIO_PIN_RESET);
+
+	/*
+	 * Según el Datasheet SX1276-7-8, pag. 80: Interfaz SPI, tenemos que especificar si
+	 * vamos a leer o escribir mediante el MSB del address. Si el primer bit que se manda es un 0,
+	 * estamos leyendo. Sino, es escritura.
+	 */
+
+	// Asignamos 1 al MSB del address para indicar escritura
+	addr |= 0x80; // 10000000
+
+	// Comenzamos transmisión del address
+	HAL_SPI_Transmit(loRa->SPI_Handler, &addr, 1,TRANSFER_TIMEOUT);
+
+	// Esperamos a que termine
+	while(HAL_SPI_GetState(loRa->SPI_Handler) != HAL_SPI_STATE_READY);
+
+	// Escribimos el dato en el registro.
+	HAL_SPI_Transmit(loRa->SPI_Handler, &data, 1, TRANSFER_TIMEOUT);
+
+	// Volvemos a esperar que termine
+	while(HAL_SPI_GetState(loRa->SPI_Handler) != HAL_SPI_STATE_READY);
+
+	// Finalizamos transferencia levantando el NSS
+	HAL_GPIO_WritePin(loRa->NSS_port, loRa->NSS_pin, GPIO_PIN_SET);
+}
+
+
+/*
+ * Escribe el registro ubicado en la dirección "addr" ("length" bytes de longitud)
+ *
+ * Útil para escribir en la cola "FIFO" del módulo para la transmisión de datos con
+ * mayor longitud.
+ */
+void LoRa_burstWriteBlocking(LoRa* loRa, uint8_t addr, uint8_t* data, uint8_t length)
+{
+	// Hacemos NSS bajo para seleccionar el chip asignado al LoRa
+	HAL_GPIO_WritePin(loRa->NSS_port, loRa->NSS_pin, GPIO_PIN_RESET);
+
+	// Asignamos 1 al MSB del address para indicar escritura
+	addr |= 0x80; // 10000000
+
+	// Comenzamos transmisión del address
+	HAL_SPI_Transmit(loRa->SPI_Handler, &addr, 1,TRANSFER_TIMEOUT);
+
+	// Esperamos a que termine
+	while(HAL_SPI_GetState(loRa->SPI_Handler) != HAL_SPI_STATE_READY);
+
+	// Escribimos los datos en el registro.
+	HAL_SPI_Transmit(loRa->SPI_Handler, data, length, TRANSFER_TIMEOUT);
+
+	// Volvemos a esperar que termine
+	while(HAL_SPI_GetState(loRa->SPI_Handler) != HAL_SPI_STATE_READY);
+
+	// Finalizamos transferencia levantando el NSS
+	HAL_GPIO_WritePin(loRa->NSS_port, loRa->NSS_pin, GPIO_PIN_SET);
+}
+
+
+void LoRa_setMode(LoRa* loRa, LoRa_Mode mode)
+{
+	RegOpMode_t currentMode;
+	currentMode.data = LoRa_readRegBlocking(loRa, REG_OP_MODE);
+
+	currentMode.Mode = mode;
+
+	LoRa_writeRegBlocking(loRa, REG_OP_MODE, currentMode.data);
+
+	loRa->currentMode = mode;
+}
+
+
+void LoRa_enableLongRange(LoRa* loRa){
+	RegOpMode_t currentMode;
+	currentMode.data = LoRa_readRegBlocking(loRa, REG_OP_MODE);
+
+	currentMode.LongRangeMode = 1u;
+	LoRa_writeRegBlocking(loRa, REG_OP_MODE, currentMode.data);
+}
