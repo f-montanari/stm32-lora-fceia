@@ -57,6 +57,17 @@ typedef enum {
 	RxSingleMode = 6u
 } LoRa_Mode;
 
+/* ------ Ganancia ---------- */
+
+// Estos valores salen del siguiente repo: https://github.com/SMotlaq/LoRa/blob/master/LoRa/LoRa.h
+// Habría que ver bien el cálculo, que se encuentra en el datasheet pag 94, así usamos el registro como se debe.
+// Es cuestión de ver si uso (o no) el PA output pin (que es para la transmisión).
+typedef enum {
+	Power_11DB = 0xF6,
+	Power_14DB = 0xF9,
+	Power_17DB = 0xFC,
+	Power_20DB = 0xFF
+} LoRa_Power_Gain;
 
 typedef struct LoRa_Settings
 {
@@ -70,6 +81,9 @@ typedef struct LoRa_Settings
 
 	GPIO_TypeDef*      DIO0_port;
 	uint16_t		   DIO0_pin;
+
+	// OverCurrentProtection
+	uint8_t		   	   OCPmilliamps;
 
 	// SPI
 	SPI_HandleTypeDef* SPI_Handler;

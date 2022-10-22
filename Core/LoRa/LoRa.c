@@ -315,3 +315,50 @@ void LoRa_enableLongRange(LoRa* loRa){
 	currentMode.LongRangeMode = 1u;
 	LoRa_writeRegBlocking(loRa, REG_OP_MODE, currentMode.data);
 }
+
+void LoRa_setFrequency(LoRa* loRa, long freq)
+{
+	// Según pág 109 del datasheet, Frf = freq * 2^19 / F(XOSC).
+	// Multiplicar por 2^19 es correr 19 bits a la izq, F(XOSC) es = 32MHz x defecto.
+	uint64_t F = ((uint64_t)freq << 19) / 32E6;
+
+	LoRa_writeRegBlocking(loRa, REG_FR_MSB, (uint8_t)(F>>16));
+	LoRa_writeRegBlocking(loRa, REG_FR_MID, (uint8_t)(F>>8));
+	LoRa_writeRegBlocking(loRa, REG_FR_LSB, (uint8_t)(F>>0));
+}
+
+void LoRa_setPower(LoRa* loRa, LoRa_Power_Gain gain)
+{
+	LoRa_writeRegBlocking(loRa, REG_PA_CFG, (uint8_t)gain);
+	HAL_Delay(10);
+}
+
+/*
+ * Setea protección a sobrecorriente en la cantidad de milliamperes especificado en "current"
+ */
+void LoRa_setOCP(LoRa* loRa, uint8_t current)
+{
+	uint8_t OcpTrim = 0;
+
+	// Aseguro que "current" esté entre los valores posibles.
+	if(current <45) current = 45;
+	if(current > 240) current = 240;
+
+	// Calculo según fórmula en página 85 del datasheet
+	if(current<=120)
+	{
+		OcpTrim = (current-45)/5;
+	}
+	else
+	{
+		OcpTrim = (current + 30)/10;
+	}
+
+	RegOcp_t OCPReg;
+	OCPReg.OcpOn = 1;
+	OCPReg.OcpTrim = OcpTrim;
+
+	LoRa_writeRegBlocking(loRa, REG_OCP, OCPReg.data);
+	HAL_Delay(10);
+	loRa->OCPmilliamps = current;
+}
