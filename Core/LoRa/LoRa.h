@@ -26,7 +26,7 @@
 
 // Receptor
 #define REG_LNA						0x0C
-#define REG_FIFO_ADD_PTR			0x0D
+#define REG_FIFO_ADDR_PTR			0x0D
 #define REG_FIFO_TX_BASE_ADDR		0x0E
 #define REG_FIFO_RX_BASE_ADDR		0x0F
 #define REG_FIFO_RX_CURR_ADDR		0x10
@@ -50,11 +50,11 @@
 /* ------ Estados ----------- */
 
 typedef enum {
-	SleepMode = 0u,
-	StandbyMode = 1u,
-	TxMode = 3u,
-	RxContinuousMode = 5u,
-	RxSingleMode = 6u
+	LoRa_SleepMode = 0u,
+	LoRa_StandbyMode = 1u,
+	LoRa_TxMode = 3u,
+	LoRa_RxContinuousMode = 5u,
+	LoRa_RxSingleMode = 6u
 } LoRa_Mode;
 
 /* ------ Ganancia ---------- */
@@ -69,6 +69,17 @@ typedef enum {
 	Power_20DB = 0xFF
 } LoRa_Power_Gain;
 
+/* ------- Spreading Factor ------- */
+typedef enum {
+	SF_64 = 6u,
+	SF_128,
+	SF_256,
+	SF_512,
+	SF_1024,
+	SF_2048,
+	SF_4096
+} LoRa_SpreadingFactor;
+
 typedef struct LoRa_Settings
 {
 
@@ -82,22 +93,33 @@ typedef struct LoRa_Settings
 	GPIO_TypeDef*      DIO0_port;
 	uint16_t		   DIO0_pin;
 
-	// OverCurrentProtection
-	uint8_t		   	   OCPmilliamps;
-
 	// SPI
 	SPI_HandleTypeDef* SPI_Handler;
 
 	// Current Mode
 	LoRa_Mode		   currentMode;
 
+	// Settings
+	long frequency;
+	LoRa_Power_Gain powerGain;
+	uint8_t OCPmilliamps; // OverCurrentProtection
+	LoRa_SpreadingFactor spreadingFactor;
+
 } LoRa;
 
 
-uint16_t LoRa_init(LoRa* _LoRa);
+
+LoRa LoRa_getDefault();
+void LoRa_init(LoRa* _LoRa);
 void LoRa_reset(LoRa* _LoRa);
 uint8_t LoRa_readRegBlocking(LoRa* loRa, uint8_t addr);
+void LoRa_setSpreadingFactor(LoRa* loRa, LoRa_SpreadingFactor spreadingFactor);
+void LoRa_enableLNABoost(LoRa* loRa, uint8_t enabled);
+void LoRa_enableCRC(LoRa* loRa, uint8_t enabled);
+void LoRa_setOCP(LoRa* loRa, uint8_t current);
+void LoRa_setPower(LoRa* loRa, LoRa_Power_Gain gain);
 void LoRa_writeRegBlocking(LoRa* loRa, uint8_t addr, uint8_t data);
 void LoRa_burstWriteBlocking(LoRa* loRa, uint8_t addr, uint8_t* data, uint8_t length);
+uint8_t LoRa_transmitBlocking(LoRa* loRa, uint8_t* data, uint8_t length, uint16_t timeout);
 
 #endif /* LORA_LORA_H_ */

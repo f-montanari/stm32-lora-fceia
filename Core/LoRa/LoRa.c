@@ -16,10 +16,6 @@ typedef union {
 	uint8_t data;
 } RegOpMode_t;
 
-uint8_t RegFrMsb;
-uint8_t RegFrMid;
-uint8_t RegFrLsb;
-
 // RegPaConfig
 typedef union {
 	struct {
@@ -61,11 +57,6 @@ typedef union {
 	uint8_t data;
 } RegLna_t;
 
-uint8_t RegFifoAddrPtr;
-uint8_t RegFifoTxBaseAddr;
-uint8_t RegFifoRxBaseAddr;
-uint8_t RegFifoRxCurrAddr;
-
 typedef union {
 	struct {
 		unsigned RxTimeoutMask:1;
@@ -80,12 +71,6 @@ typedef union {
 	uint8_t data;
 } RegIrqFlagsMask_t;
 
-uint8_t RegRxNbBytes;
-uint8_t RegRxHeaderCntValueMsb;
-uint8_t RegRxHeaderCntValueLsb;
-uint8_t RegRxPacketCntValueMsb;
-uint8_t RegRxPacketCntValueLsb;
-
 typedef union {
 	struct {
 		unsigned RxCodingRate :3;
@@ -99,10 +84,6 @@ typedef union {
 	};
 	uint8_t data;
 } RegModemStat_t;
-
-uint8_t RegPktSnrValue;
-uint8_t RegPktRssiValue;
-uint8_t RegRssiValue;
 
 typedef union {
 	struct {
@@ -132,13 +113,6 @@ typedef union {
 	uint8_t data;
 } RegModemCfg2_t;
 
-uint8_t RegSymbTimeoutLsb;
-uint8_t RegPreambleMsb;
-uint8_t RegPreambleLsb;
-uint8_t RegPaylaodLength;
-uint8_t RegHopPeriod;
-uint8_t RegFifoRxByteAddrPtr;
-
 typedef union {
 	struct {
 		unsigned :4;
@@ -157,10 +131,6 @@ typedef union {
 	uint8_t data;
 }RegFeiMSB_t;
 
-uint8_t RegFeiMid;
-uint8_t RegFeiLsb;
-uint8_t RegRssiWideband;
-
 typedef union {
 	struct {
 		unsigned :5;
@@ -177,9 +147,6 @@ typedef union {
 	};
 	uint8_t data;
 }RegInvertIQ_t;
-
-uint8_t RegDetectionThreshold;
-uint8_t RegSyncWord;
 
 /* ========================= [FIN DEFINICION REGISTROS] ========================== */
 
@@ -316,6 +283,11 @@ void LoRa_enableLongRange(LoRa* loRa){
 	LoRa_writeRegBlocking(loRa, REG_OP_MODE, currentMode.data);
 }
 
+/*
+ * Setea la frecuencia (EN HERTZ) de trabajo para el módulo LoRa.
+ * Ejemplo de llamado para 433MHz:
+ * 	LoRa_setFrequency(loRa, 433e6);
+ */
 void LoRa_setFrequency(LoRa* loRa, long freq)
 {
 	// Según pág 109 del datasheet, Frf = freq * 2^19 / F(XOSC).
@@ -331,6 +303,7 @@ void LoRa_setPower(LoRa* loRa, LoRa_Power_Gain gain)
 {
 	LoRa_writeRegBlocking(loRa, REG_PA_CFG, (uint8_t)gain);
 	HAL_Delay(10);
+	loRa->powerGain = gain;
 }
 
 /*
@@ -361,4 +334,178 @@ void LoRa_setOCP(LoRa* loRa, uint8_t current)
 	LoRa_writeRegBlocking(loRa, REG_OCP, OCPReg.data);
 	HAL_Delay(10);
 	loRa->OCPmilliamps = current;
+}
+
+/*
+ * Habilita (o no) el boost del amplificador interno del módulo para la recepción.
+ */
+void LoRa_enableLNABoost(LoRa* loRa, uint8_t enabled){
+	RegLna_t RegLna;
+	RegLna.data = LoRa_readRegBlocking(loRa, REG_LNA);
+
+	if(enabled == 1)
+		RegLna.LnaBoostHf = 3u; // 11 = boost on, 150% LNA current
+	else
+		RegLna.LnaBoostHf = 0;
+
+	// Maximum Gain
+	RegLna.LnaGain = 1u;
+	LoRa_writeRegBlocking(loRa, REG_LNA, RegLna.data);
+	HAL_Delay(10);
+}
+
+void LoRa_setSpreadingFactor(LoRa* loRa, LoRa_SpreadingFactor spreadingFactor)
+{
+	RegModemCfg2_t RegModemCfg2;
+	RegModemCfg2.data = LoRa_readRegBlocking(loRa, REG_MODEM_CFG2);
+
+	RegModemCfg2.SpreadingFactor = spreadingFactor;
+	LoRa_writeRegBlocking(loRa, REG_MODEM_CFG2, RegModemCfg2.data);
+	loRa->spreadingFactor = spreadingFactor;
+}
+
+void LoRa_enableCRC(LoRa* loRa, uint8_t enabled){
+	RegModemCfg2_t RegModemCfg2;
+	RegModemCfg2.data = LoRa_readRegBlocking(loRa, REG_MODEM_CFG2);
+
+	if(enabled == 1){
+		RegModemCfg2.RxPayloadCrcOn = 1;
+	}else{
+		RegModemCfg2.RxPayloadCrcOn = 0;
+	}
+	LoRa_writeRegBlocking(loRa, REG_MODEM_CFG2, RegModemCfg2.data);
+}
+
+/*
+ * Para evitar leer/escribir multiples veces el mismo registro, se usa
+ * este método para inicializar el registro Modem_CFG2.
+ *
+ * Acá se setean el CRC, Spreading Factor, y el los MSB del timeout.
+ *
+ * Por defecto, se habilita la generación de CRC, y se da el máximo TimeOut.
+ */
+void LoRa_initializeModemCFG2(LoRa* loRa){
+	RegModemCfg2_t RegModemCfg2;
+	RegModemCfg2.data = LoRa_readRegBlocking(loRa, REG_MODEM_CFG2);
+
+	RegModemCfg2.SpreadingFactor = loRa->spreadingFactor;
+	RegModemCfg2.RxPayloadCrcOn = 1;
+
+	// Máximo timeout.
+	RegModemCfg2.SymbTimeout = 3;
+
+	LoRa_writeRegBlocking(loRa, REG_MODEM_CFG2, RegModemCfg2.data);
+}
+
+void LoRa_initializeTimeoutLSB(LoRa* loRa)
+{
+	// Máximo timeout.
+	uint8_t RegSymbTimeoutLsb = 0xFF;
+	LoRa_writeRegBlocking(loRa, REG_SYMB_TIMEOUT_L, RegSymbTimeoutLsb);
+}
+
+/*
+ * Inicializa el módulo LoRa con las configuraciones de la estructura.
+ * Para obtener las configuraciones por defecto, use LoRa_getDefault().
+ *
+ * Más allá de las configuraciones por defecto, esta función habilita máximo
+ * timeout de paquetes, BoostLNA y generación de CRC.
+ */
+void LoRa_Init(LoRa* loRa){
+	// Antes de cambiar cualquier configuración inicial, hemos de poner el módulo en modo sleep
+	LoRa_setMode(loRa, LoRa_SleepMode);
+	HAL_Delay(10);
+
+	LoRa_setFrequency(loRa, loRa->frequency);
+	LoRa_setPower(loRa, loRa->powerGain);
+	LoRa_setOCP(loRa, loRa->OCPmilliamps);
+
+	// En teoría, en Reset ya está con ganancia más alta,
+	// pero el boost no está habilitado. En el caso que sea de un consumo muy
+	// alto, deshabilitamos el boost.
+	LoRa_enableLNABoost(loRa, 1);
+
+	// Inicializamos registros que necesitemos que tengan otros valores
+	// que no son por defecto
+	LoRa_initializeModemCFG2(loRa);
+	LoRa_initializeTimeoutLSB(loRa);
+
+	// Mandar a modo standby
+	LoRa_setMode(loRa, LoRa_StandbyMode);
+
+	// TODO: Chequear que esté todo OK haciendo un llamado al registro "RegVersion" y comparar con 0x12.
+}
+
+/*
+ * Devuelve la configuración por defecto del módulo LoRa.
+ * NO CONFIGURA HANDLER SPI NI PINES POR DEFECTO
+ * (Esos se deben setear antes de llamar a LoRa_Init())
+ *
+ * Configura:
+ * 	- Frecuencia: 433MHz
+ * 	- SpreadingFactor: 128 chips/s
+ * 	- Ganancia : 20dB
+ * 	- Overcurrent: 100 mA
+ */
+LoRa LoRa_getDefault()
+{
+	LoRa loRa;
+
+	loRa.frequency = 433E6;
+	loRa.powerGain = Power_20DB;
+	loRa.spreadingFactor = SF_128;
+	loRa.OCPmilliamps = 100;
+
+	return loRa;
+}
+
+/*
+ * Manda el dato a la cola FIFO del módulo para su transmisión.
+ * Bloquea la ejecución hasta "timeout" millisegundos, debido a que se fija (por polling)
+ * la interrupción de TxDone (lo cual es malo, pero sirve para probar).
+ * Devuelve 1 si pudo mandarlo, 0 si llegó al timeout.
+ *
+ * Al finalizar, vuelve al modo standby.
+ */
+uint8_t LoRa_transmitBlocking(LoRa* loRa, uint8_t* data, uint8_t length, uint16_t timeout)
+{
+	LoRa_setMode(loRa, LoRa_StandbyMode);
+
+	uint8_t RegFiFoTxBaseAddr = LoRa_readRegBlocking(loRa, REG_FIFO_TX_BASE_ADDR);
+
+	// Muevo el puntero de la cola al asignado para transmisión
+	LoRa_writeRegBlocking(loRa, REG_FIFO_ADDR_PTR, RegFiFoTxBaseAddr);
+
+	// Asigno la longitud del paquete
+	LoRa_writeRegBlocking(loRa, REG_PAYLOAD_LENGTH, length);
+
+	// Escribo el paquete en la cola
+	LoRa_burstWriteBlocking(loRa, REG_FIFO, data,length);
+
+	LoRa_setMode(loRa, LoRa_TxMode);
+	// Esto se puede optimizar reusando el RegFiFoTxBaseAddr,
+	// pero de esta forma es más legible. En caso de necesidad,
+	// podemos sacar 1 byte más de memoria.
+	uint8_t RegIRQFlags;
+
+	// POLLING DE INTERRUPCIÓN = MALO
+	// Más adelante habría que setear la máscara de TxDoneMask en el registro
+	// de RegIRQFlagsMask y que DIO0 sea TxDone para que levante la interrupción en ese
+	// pin, en vez de estar haciendo polling (no interrumpe al procesador).
+	while(1){
+		RegIRQFlags = LoRa_readRegBlocking(loRa, REG_IRQ_FLAGS);
+		if((RegIRQFlags & 0x08) != 0) { // 0x08 : TxDoneMask
+			// Limpio la interrupción
+			LoRa_writeRegBlocking(loRa, REG_IRQ_FLAGS, 0xFF);
+			// Vuelvo a standby
+			LoRa_setMode(loRa, LoRa_StandbyMode);
+			return 1;
+		}else{
+			if(--timeout == 0){
+				LoRa_setMode(loRa, LoRa_StandbyMode);
+				return 0;
+			}
+		}
+		HAL_Delay(1);
+	}
 }
